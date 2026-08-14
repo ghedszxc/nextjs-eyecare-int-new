@@ -1,0 +1,6 @@
+export enum LoginResultCode {
+  UNEXPECTED_ERROR = 0,
+  SUCCESS = 1,
+  INVALID_USERNAME_PASSWORD = 2,
+  INVALID_SITE_KEY = 3,
+}

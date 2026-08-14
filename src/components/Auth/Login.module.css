@@ -1,0 +1,134 @@
+.bg-wrapper {
+  width: 100%;
+  height: 100svh;
+  background: url("/images/back-login-blk-23-jpg-data.jpg") no-repeat center
+    center;
+  background-attachment: fixed;
+  background-clip: border-box;
+  background-origin: padding-box;
+  background-size: cover;
+}
+.container {
+  width: 100%;
+  max-width: 1170px;
+
+  margin: 0 auto;
+  /* display: grid;
+  justify-content: center;
+  align-content: center; */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  gap: 30px;
+  padding: 0 15px;
+}
+
+.content-wrapper {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 45px;
+}
+
+.form-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.form-error {
+  padding: 15px;
+  background-color: #f2dede;
+  border-color: #ebccd1;
+  color: #a94442;
+  font-size: 14px;
+}
+
+.form-title {
+  font-size: 48;
+  font-weight: 500;
+  color: #fff;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.field-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.field-label {
+  color: #fff;
+  font-size: 18;
+}
+
+.field-input {
+  padding: 6px 12px;
+  height: 50;
+  font-size: 14;
+  border-radius: 4;
+  border: 1px solid rgba(0, 122, 201, 0.3);
+}
+
+.field-input:focus {
+  outline: 1px solid rgba(0, 122, 201, 1);
+}
+.field-input:disabled {
+  background-color: #f5f5f5;
+  color: #9ca3af;
+  border-color: #e5e7eb;
+  cursor: not-allowed;
+}
+
+.submit-button {
+  background-color: #007ac9;
+  padding: 13px 34px;
+  text-transform: uppercase;
+  color: #fff;
+  font-size: 16;
+  width: auto;
+  cursor: pointer;
+  font-weight: 500;
+  border: 0;
+}
+
+.submit-button:disabled {
+  cursor: progress;
+}
+.submit-button:hover {
+  color: rgba(255, 255, 255, 0.7);
+}
+.submit-button:disabled {
+  background-color: rgba(0, 102, 204, 0.7);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+@media (min-width: 768px) {
+  .submit-button {
+    width: 50%;
+  }
+  .content-wrapper {
+    width: 50%;
+  }
+}
+
+@media (min-width: 1024px) {
+  .container {
+    margin: 0 auto;
+    display: grid;
+    justify-content: start;
+    align-content: center;
+    height: 100%;
+    gap: 30px;
+    padding: 0 42px;
+  }
+  .content-wrapper {
+    width: 100%;
+  }
+}

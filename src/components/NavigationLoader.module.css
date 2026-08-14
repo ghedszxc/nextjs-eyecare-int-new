@@ -1,0 +1,12 @@
+/*
+ * The loader fills the viewport (PageLoader uses min-height: 100svh) but is not
+ * positioned, so as a portal it needs to be pinned over the current page. 200
+ * clears the highest z-index in the app and the design system (100).
+ */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  overflow: hidden;
+  background: #fff;
+}

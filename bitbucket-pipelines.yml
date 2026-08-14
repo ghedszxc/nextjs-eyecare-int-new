@@ -1,0 +1,549 @@
+#  Template NodeJS build
+#  This template allows you to validate your NodeJS code.
+#  The workflow allows running tests and code linting on the default branch.
+image: ubuntu:22.04
+options:
+  docker: true
+  size: 2x
+definitions:
+  services:
+    docker:
+      memory: 4096
+pipelines:
+  custom:
+    INT-PREVIEW:
+      - step:
+          name: Build Image INT Preview
+          script:
+            - export environment=int
+            - export env=preview
+            - export namespace=$INT_NAMESPACE
+            - export image=$INT_ACR_REGISTRY_URL/fe-elec/essilor-luxottica-internal:latest-$env
+            - export app_name=essilor
+            
+            - echo "environment=$environment" > build.env
+            - echo "env=$env" >> build.env
+            - echo "namespace=$namespace" >> build.env
+            - echo "image=$image" >> build.env
+            - echo "app_name=$app_name" >> build.env
+
+            - rm -f ./config_transitions.json
+            - cp -f ./build-scripts/${environment}/${env}_config_transitions.json ./config_transitions.json
+            - cat ./config_transitions.json                      
+
+            - docker login $INT_ACR_REGISTRY_URL -u $INT_ACR_USERNAME -p $INT_ACR_PASSWORD
+            - docker build -t $image .
+            - docker push $image
+          artifacts:
+            - build.env  
+
+      - step:
+          name: Deploy INT Preview
+          script:
+            - apt-get update && apt-get install -y jq sudo curl
+            - apt-get install -y gettext -y
+            - curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            - curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
+            - echo "$(cat kubectl.sha256) kubectl" | sha256sum --check
+            - sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+            - kubectl version --client --output=yaml
+            - curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+                         
+            - az login --service-principal -u $INT_AZ_SP_USERNAME -p $INT_AZ_SP_PASSWORD --tenant $AZ_TENANT_ID
+            - az aks get-credentials -n $INT_AKS -g $INT_RG --admin
+            
+            - source build.env
+            - export $(cat build.env | xargs) 
+            - env | grep -E 'environment|env|namespace|image|app_name'
+            
+            # Read value from config.json
+            - export config_GRAPHQL_URL=$(jq -r '.GRAPHQL_URL' ./build-scripts/${environment}/${env}_config_transitions.json)
+            - export config_AKAMAY_PATH=$(jq -r '.AKAMAY_PATH' ./build-scripts/${environment}/${env}_config_transitions.json)
+            - env | grep -E 'config_GRAPHQL_URL|config_AKAMAY_PATH'
+
+            - envsubst < ./build-scripts/manifests/configmap.yml > ./build-scripts/manifests/aks_configmap.yml   
+            - envsubst < ./build-scripts/manifests/charttemplate.yml > ./build-scripts/manifests/Chart.yaml            
+            
+            - cat ./build-scripts/manifests/aks_configmap.yml
+            - kubectl apply -f ./build-scripts/manifests/aks_configmap.yml 
+            - cat ./build-scripts/manifests/templates/01-deployment.yml 
+            - cat ./build-scripts/manifests/templates/02-service.yml 
+
+            # Install Helm
+            - curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+            - chmod +x get_helm.sh
+            - ./get_helm.sh
+            - helm version          
+            - > 
+              helm upgrade --install -n $namespace $app_name-fe-$env 
+              --set fe_image=$image,app_name=$app_name
+              -f ./build-scripts/manifests/values/$environment-$env.yml 
+              -f ./build-scripts/manifests/secrets/$env.yml ./build-scripts/manifests
+
+    INT-LIVE:
+      - step:
+          name: Build Image INT Live
+          script:
+            - export environment=int
+            - export env=live
+            - export namespace=$INT_NAMESPACE
+            - export image=$INT_ACR_REGISTRY_URL/fe-elec/essilor-luxottica-internal:latest-$env
+            - export app_name=essilor
+            
+            - echo "environment=$environment" > build.env
+            - echo "env=$env" >> build.env
+            - echo "namespace=$namespace" >> build.env
+            - echo "image=$image" >> build.env
+            - echo "app_name=$app_name" >> build.env
+
+            - rm -f ./config_transitions.json
+            - cp -f ./build-scripts/${environment}/${env}_config_transitions.json ./config_transitions.json
+            - cat ./config_transitions.json                      
+
+            - docker login $INT_ACR_REGISTRY_URL -u $INT_ACR_USERNAME -p $INT_ACR_PASSWORD
+            - docker build -t $image .
+            - docker push $image
+          artifacts:
+            - build.env  
+
+      - step:
+          name: Deploy INT Live
+          script:
+            - apt-get update && apt-get install -y jq sudo curl
+            - apt-get install -y gettext -y
+            - curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            - curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
+            - echo "$(cat kubectl.sha256) kubectl" | sha256sum --check
+            - sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+            - kubectl version --client --output=yaml
+            - curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+                         
+            - az login --service-principal -u $INT_AZ_SP_USERNAME -p $INT_AZ_SP_PASSWORD --tenant $AZ_TENANT_ID
+            - az aks get-credentials -n $INT_AKS -g $INT_RG --admin
+            
+            - source build.env
+            - export $(cat build.env | xargs) 
+            - env | grep -E 'environment|env|namespace|image|app_name'
+            
+            # Read value from config.json
+            - export config_GRAPHQL_URL=$(jq -r '.GRAPHQL_URL' ./build-scripts/${environment}/${env}_config_transitions.json)
+            - export config_AKAMAY_PATH=$(jq -r '.AKAMAY_PATH' ./build-scripts/${environment}/${env}_config_transitions.json)
+            - env | grep -E 'config_GRAPHQL_URL|config_AKAMAY_PATH'
+
+            - envsubst < ./build-scripts/manifests/configmap.yml > ./build-scripts/manifests/aks_configmap.yml   
+            - envsubst < ./build-scripts/manifests/charttemplate.yml > ./build-scripts/manifests/Chart.yaml            
+            
+            - cat ./build-scripts/manifests/aks_configmap.yml
+            - kubectl apply -f ./build-scripts/manifests/aks_configmap.yml 
+            - cat ./build-scripts/manifests/templates/01-deployment.yml 
+            - cat ./build-scripts/manifests/templates/02-service.yml 
+
+            # Install Helm
+            - curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+            - chmod +x get_helm.sh
+            - ./get_helm.sh
+            - helm version          
+            - > 
+              helm upgrade --install -n $namespace $app_name-fe-$env 
+              --set fe_image=$image,app_name=$app_name
+              -f ./build-scripts/manifests/values/$environment-$env.yml 
+              -f ./build-scripts/manifests/secrets/$env.yml ./build-scripts/manifests   
+  
+    UAT-PREVIEW:
+      - step:
+          name: Build Image UAT Preview
+          script:
+            - export environment=uat
+            - export env=preview
+            - export namespace=$UAT_NAMESPACE_CM12
+            - export image=$UAT_ACR_REGISTRY_URL/fe-elec/essilor-luxottica-internal:latest-$env
+            - export app_name=essilor-internal   
+
+            - echo "environment=$environment" > build.env
+            - echo "env=$env" >> build.env
+            - echo "namespace=$namespace" >> build.env
+            - echo "image=$image" >> build.env
+            - echo "app_name=$app_name" >> build.env
+            - cat build.env
+
+            - rm -f ./config_transitions.json
+            - cp -f ./build-scripts/${environment}/${env}_config_transitions.json ./config_transitions.json
+
+            - cat ./config_transitions.json                      
+
+            - docker login $UAT_ACR_REGISTRY_URL -u $UAT_ACR_USERNAME -p $UAT_ACR_PASSWORD
+            - docker build -t $image .
+            - docker push $image
+          artifacts:
+            - build.env
+
+      - step:
+          name: Deploy UAT Preview
+          image: 
+            name: ELDAAVNCMCRQ01.azurecr.io/devops/deployment-tool:latest
+            username: $UAT_AZ_SP_USERNAME
+            password: $UAT_AZ_SP_PASSWORD
+          services:
+            - docker
+          script:
+            - az login --service-principal -u $UAT_AZ_SP_USERNAME -p $UAT_AZ_SP_PASSWORD --tenant $AZ_TENANT_ID
+            - az aks get-credentials -n $UAT_AKS -g $UAT_RG --admin
+
+            - source build.env
+            - export $(cat build.env | xargs) 
+            - env | grep -E 'environment|env|namespace|image|app_name'
+            
+            # Read value from config.json
+            - export config_GRAPHQL_URL=$(jq -r '.GRAPHQL_URL' ./build-scripts/${environment}/${env}_config_transitions.json)
+            - export config_AKAMAY_PATH=$(jq -r '.AKAMAY_PATH' ./build-scripts/${environment}/${env}_config_transitions.json)
+            - env | grep -E 'config_GRAPHQL_URL|config_AKAMAY_PATH'
+
+            - envsubst < ./build-scripts/manifests/configmap.yml > ./build-scripts/manifests/aks_configmap.yml   
+            - envsubst < ./build-scripts/manifests/charttemplate.yml > ./build-scripts/manifests/Chart.yaml            
+            
+            - kubectl version --client 
+
+            - cat ./build-scripts/manifests/aks_configmap.yml
+            - kubectl apply -f ./build-scripts/manifests/aks_configmap.yml 
+            - cat ./build-scripts/manifests/templates/01-deployment.yml 
+            - cat ./build-scripts/manifests/templates/02-service.yml 
+
+            - helm version          
+            - > 
+              helm upgrade --install -n $namespace $app_name-fe-$env 
+              --set fe_image=$image,app_name=$app_name
+              -f ./build-scripts/manifests/values/$environment-$env.yml 
+              -f ./build-scripts/manifests/secrets/$env.yml ./build-scripts/manifests
+
+    UAT-LIVE:
+      - step:
+          name: Build Image UAT Live
+          script:
+            - export environment=uat
+            - export env=live
+            - export namespace=$UAT_NAMESPACE_CM12
+            - export image=$UAT_ACR_REGISTRY_URL/fe-elec/essilor-luxottica-internal:latest-$env
+            - export app_name=essilor-internal   
+
+            - echo "environment=$environment" > build.env
+            - echo "env=$env" >> build.env
+            - echo "namespace=$namespace" >> build.env
+            - echo "image=$image" >> build.env
+            - echo "app_name=$app_name" >> build.env
+            - cat build.env
+
+            - rm -f ./config_transitions.json
+            - cp -f ./build-scripts/${environment}/${env}_config_transitions.json ./config_transitions.json
+
+            - cat ./config_transitions.json                      
+
+            - docker login $UAT_ACR_REGISTRY_URL -u $UAT_ACR_USERNAME -p $UAT_ACR_PASSWORD
+            - docker build -t $image .
+            - docker push $image
+          artifacts:
+            - build.env
+
+      - step:
+          name: Deploy UAT Live
+          image: 
+            name: ELDAAVNCMCRQ01.azurecr.io/devops/deployment-tool:latest
+            username: $UAT_AZ_SP_USERNAME
+            password: $UAT_AZ_SP_PASSWORD
+          services:
+            - docker
+          script:
+            - az login --service-principal -u $UAT_AZ_SP_USERNAME -p $UAT_AZ_SP_PASSWORD --tenant $AZ_TENANT_ID
+            - az aks get-credentials -n $UAT_AKS -g $UAT_RG --admin
+
+            - source build.env
+            - export $(cat build.env | xargs) 
+            - env | grep -E 'environment|env|namespace|image|app_name'
+            
+            # Read value from config.json
+            - export config_GRAPHQL_URL=$(jq -r '.GRAPHQL_URL' ./build-scripts/${environment}/${env}_config_transitions.json)
+            - export config_AKAMAY_PATH=$(jq -r '.AKAMAY_PATH' ./build-scripts/${environment}/${env}_config_transitions.json)
+            - env | grep -E 'config_GRAPHQL_URL|config_AKAMAY_PATH'
+
+            - envsubst < ./build-scripts/manifests/configmap.yml > ./build-scripts/manifests/aks_configmap.yml   
+            - envsubst < ./build-scripts/manifests/charttemplate.yml > ./build-scripts/manifests/Chart.yaml            
+            
+            - kubectl version --client 
+
+            - cat ./build-scripts/manifests/aks_configmap.yml
+            - kubectl apply -f ./build-scripts/manifests/aks_configmap.yml 
+            - cat ./build-scripts/manifests/templates/01-deployment.yml 
+            - cat ./build-scripts/manifests/templates/02-service.yml 
+
+            - helm version          
+            - > 
+              helm upgrade --install -n $namespace $app_name-fe-$env 
+              --set fe_image=$image,app_name=$app_name
+              -f ./build-scripts/manifests/values/$environment-$env.yml 
+              -f ./build-scripts/manifests/secrets/$env.yml ./build-scripts/manifests
+
+
+    PROD-PREVIEW:
+      - step:
+          name: Build Image PROD Preview
+          script:
+            - export environment=prod
+            - export env=preview
+            - export namespace=$PRD_NAMESPACE_CM12
+            - export image=$PROD_ACR_REGISTRY_URL/fe-elec/essilor-luxottica-internal:latest-$env
+            - export app_name=essilor-internal
+            
+            - echo "environment=$environment" > build.env
+            - echo "env=$env" >> build.env
+            - echo "namespace=$namespace" >> build.env
+            - echo "image=$image" >> build.env
+            - echo "app_name=$app_name" >> build.env
+
+            - rm -f ./config_transitions.json
+            - cp -f ./build-scripts/${environment}/${env}_config_transitions.json ./config_transitions.json
+            - cat ./config_transitions.json                      
+
+            - docker login $PROD_ACR_REGISTRY_URL -u $PROD_ACR_USERNAME -p $PROD_ACR_PASSWORD
+            - docker build -t $image .
+            - docker push $image
+          artifacts:
+            - build.env  
+
+      - step:
+          name: Deploy PROD Preview
+          image: 
+            name: ELDAAVNCMCRP01.azurecr.io/devops/deployment-tool:latest
+            username: $PRD_AZ_SP_USERNAME
+            password: $PRD_AZ_SP_PASSWORD
+          services:
+            - docker
+          script:
+            - az login --service-principal -u $PRD_AZ_SP_USERNAME -p $PRD_AZ_SP_PASSWORD --tenant $AZ_TENANT_ID
+            - az aks get-credentials -n $PRD_AKS -g $PRD_RG --admin
+            
+            - source build.env
+            - export $(cat build.env | xargs) 
+            - env | grep -E 'environment|env|namespace|image|app_name'
+            
+            # Read value from config.json
+            - export config_GRAPHQL_URL=$(jq -r '.GRAPHQL_URL' ./build-scripts/${environment}/${env}_config_transitions.json)
+            - export config_AKAMAY_PATH=$(jq -r '.AKAMAY_PATH' ./build-scripts/${environment}/${env}_config_transitions.json)
+            - env | grep -E 'config_GRAPHQL_URL|config_AKAMAY_PATH'
+
+            - envsubst < ./build-scripts/manifests/configmap.yml > ./build-scripts/manifests/aks_configmap.yml   
+            - envsubst < ./build-scripts/manifests/charttemplate.yml > ./build-scripts/manifests/Chart.yaml            
+            
+            - kubectl version --client 
+
+            - cat ./build-scripts/manifests/aks_configmap.yml
+            - kubectl apply -f ./build-scripts/manifests/aks_configmap.yml 
+            - cat ./build-scripts/manifests/templates/01-deployment.yml 
+            - cat ./build-scripts/manifests/templates/02-service.yml
+            
+            - helm version
+            - > 
+              helm upgrade --install -n $namespace $app_name-fe-$env 
+              --set fe_image=$image,app_name=$app_name
+              -f ./build-scripts/manifests/values/$environment-$env.yml 
+              -f ./build-scripts/manifests/secrets/prod-$env.yml ./build-scripts/manifests
+
+    PROD-LIVE:
+      - step:
+          name: Build Image PROD Live
+          script:
+            - export environment=prod
+            - export env=live
+            - export namespace=$PRD_NAMESPACE_CM12
+            - export image=$PROD_ACR_REGISTRY_URL/fe-elec/essilor-luxottica-internal:latest-$env
+            - export app_name=essilor-internal
+            
+            - echo "environment=$environment" > build.env
+            - echo "env=$env" >> build.env
+            - echo "namespace=$namespace" >> build.env
+            - echo "image=$image" >> build.env
+            - echo "app_name=$app_name" >> build.env
+
+            - rm -f ./config_transitions.json
+            - cp -f ./build-scripts/${environment}/${env}_config_transitions.json ./config_transitions.json
+            - cat ./config_transitions.json                      
+
+            - docker login $PROD_ACR_REGISTRY_URL -u $PROD_ACR_USERNAME -p $PROD_ACR_PASSWORD
+            - docker build -t $image .
+            - docker push $image
+          artifacts:
+            - build.env  
+
+      - step:
+          name: Deploy PROD Live
+          image: 
+            name: ELDAAVNCMCRP01.azurecr.io/devops/deployment-tool:latest
+            username: $PRD_AZ_SP_USERNAME
+            password: $PRD_AZ_SP_PASSWORD
+          services:
+            - docker
+          script:
+            - az login --service-principal -u $PRD_AZ_SP_USERNAME -p $PRD_AZ_SP_PASSWORD --tenant $AZ_TENANT_ID
+            - az aks get-credentials -n $PRD_AKS -g $PRD_RG --admin
+            
+            - source build.env
+            - export $(cat build.env | xargs) 
+            - env | grep -E 'environment|env|namespace|image|app_name'
+            
+            # Read value from config.json
+            - export config_GRAPHQL_URL=$(jq -r '.GRAPHQL_URL' ./build-scripts/${environment}/${env}_config_transitions.json)
+            - export config_AKAMAY_PATH=$(jq -r '.AKAMAY_PATH' ./build-scripts/${environment}/${env}_config_transitions.json)
+            - env | grep -E 'config_GRAPHQL_URL|config_AKAMAY_PATH'
+
+            - envsubst < ./build-scripts/manifests/configmap.yml > ./build-scripts/manifests/aks_configmap.yml   
+            - envsubst < ./build-scripts/manifests/charttemplate.yml > ./build-scripts/manifests/Chart.yaml            
+            
+            - kubectl version --client 
+
+            - cat ./build-scripts/manifests/aks_configmap.yml
+            - kubectl apply -f ./build-scripts/manifests/aks_configmap.yml 
+            - cat ./build-scripts/manifests/templates/01-deployment.yml 
+            - cat ./build-scripts/manifests/templates/02-service.yml
+            
+            - helm version
+            - > 
+              helm upgrade --install -n $namespace $app_name-fe-$env 
+              --set fe_image=$image,app_name=$app_name
+              -f ./build-scripts/manifests/values/$environment-$env.yml 
+              -f ./build-scripts/manifests/secrets/prod-$env.yml ./build-scripts/manifests
+
+    DR-PREVIEW:
+      - step:
+          name: Build Image DR Preview
+          script:
+            - export environment=dr
+            - export env=preview
+            - export namespace=$DR_NAMESPACE
+            - export image=$DR_ACR_REGISTRY_URL/fe-elec/essilor-luxottica-internal:latest-$env
+            - export app_name=essilor
+            
+            - echo "environment=$environment" > build.env
+            - echo "env=$env" >> build.env
+            - echo "namespace=$namespace" >> build.env
+            - echo "image=$image" >> build.env
+            - echo "app_name=$app_name" >> build.env
+
+            - rm -f ./config_transitions.json
+            - cp -f ./build-scripts/${environment}/${env}_config_transitions.json ./config_transitions.json
+            - cat ./config_transitions.json                      
+
+            - docker login $DR_ACR_REGISTRY_URL -u $DR_ACR_USERNAME -p $DR_ACR_PASSWORD
+            - docker build -t $image .
+            - docker push $image
+          artifacts:
+            - build.env  
+
+      - step:
+          name: Deploy DR Preview
+          script:
+            - apt-get update && apt-get install -y jq sudo curl
+            - apt-get install -y gettext -y
+            - curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            - curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
+            - echo "$(cat kubectl.sha256) kubectl" | sha256sum --check
+            - sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+            - kubectl version --client --output=yaml
+            - curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+                         
+            - az login --service-principal -u $DR_AZ_SP_USERNAME -p $DR_AZ_SP_PASSWORD --tenant $AZ_TENANT_ID
+            - az aks get-credentials -n $DR_AKS -g $DR_RG --admin
+            
+            - source build.env
+            - export $(cat build.env | xargs) 
+            - env | grep -E 'environment|env|namespace|image|app_name'
+            
+            # Read value from config.json
+            - export config_GRAPHQL_URL=$(jq -r '.GRAPHQL_URL' ./build-scripts/${environment}/${env}_config_transitions.json)
+            - export config_AKAMAY_PATH=$(jq -r '.AKAMAY_PATH' ./build-scripts/${environment}/${env}_config_transitions.json)
+            - env | grep -E 'config_GRAPHQL_URL|config_AKAMAY_PATH'
+
+            - envsubst < ./build-scripts/manifests/configmap.yml > ./build-scripts/manifests/aks_configmap.yml   
+            - envsubst < ./build-scripts/manifests/charttemplate.yml > ./build-scripts/manifests/Chart.yaml            
+            
+            - cat ./build-scripts/manifests/aks_configmap.yml
+            - kubectl apply -f ./build-scripts/manifests/aks_configmap.yml 
+            - cat ./build-scripts/manifests/templates/01-deployment.yml 
+            - cat ./build-scripts/manifests/templates/02-service.yml 
+
+            # Install Helm
+            - curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+            - chmod +x get_helm.sh
+            - ./get_helm.sh
+            - helm version          
+            - > 
+              helm upgrade --install -n $namespace $app_name-fe-$env 
+              --set fe_image=$image,app_name=$app_name
+              -f ./build-scripts/manifests/values/$environment-$env.yml 
+              -f ./build-scripts/manifests/secrets/prod-$env.yml ./build-scripts/manifests
+            
+    DR-LIVE:
+      - step:
+          name: Build Image DR Live
+          script:
+            - export environment=dr
+            - export env=live
+            - export namespace=$DR_NAMESPACE
+            - export image=$DR_ACR_REGISTRY_URL/fe-elec/essilor-luxottica-internal:latest-$env
+            - export app_name=essilor
+            
+            - echo "environment=$environment" > build.env
+            - echo "env=$env" >> build.env
+            - echo "namespace=$namespace" >> build.env
+            - echo "image=$image" >> build.env
+            - echo "app_name=$app_name" >> build.env
+
+            - rm -f ./config_transitions.json
+            - cp -f ./build-scripts/${environment}/${env}_config_transitions.json ./config_transitions.json
+            - cat ./config_transitions.json                      
+
+            - docker login $DR_ACR_REGISTRY_URL -u $DR_ACR_USERNAME -p $DR_ACR_PASSWORD
+            - docker build -t $image .
+            - docker push $image
+          artifacts:
+            - build.env  
+
+      - step:
+          name: Deploy DR Live
+          script:
+            - apt-get update && apt-get install -y jq sudo curl
+            - apt-get install -y gettext -y
+            - curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            - curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
+            - echo "$(cat kubectl.sha256) kubectl" | sha256sum --check
+            - sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+            - kubectl version --client --output=yaml
+            - curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+                         
+            - az login --service-principal -u $DR_AZ_SP_USERNAME -p $DR_AZ_SP_PASSWORD --tenant $AZ_TENANT_ID
+            - az aks get-credentials -n $DR_AKS -g $DR_RG --admin
+            
+            - source build.env
+            - export $(cat build.env | xargs) 
+            - env | grep -E 'environment|env|namespace|image|app_name'
+            
+            # Read value from config.json
+            - export config_GRAPHQL_URL=$(jq -r '.GRAPHQL_URL' ./build-scripts/${environment}/${env}_config_transitions.json)
+            - export config_AKAMAY_PATH=$(jq -r '.AKAMAY_PATH' ./build-scripts/${environment}/${env}_config_transitions.json)
+            - env | grep -E 'config_GRAPHQL_URL|config_AKAMAY_PATH'
+
+            - envsubst < ./build-scripts/manifests/configmap.yml > ./build-scripts/manifests/aks_configmap.yml   
+            - envsubst < ./build-scripts/manifests/charttemplate.yml > ./build-scripts/manifests/Chart.yaml            
+            
+            - cat ./build-scripts/manifests/aks_configmap.yml
+            - kubectl apply -f ./build-scripts/manifests/aks_configmap.yml 
+            - cat ./build-scripts/manifests/templates/01-deployment.yml 
+            - cat ./build-scripts/manifests/templates/02-service.yml 
+
+            # Install Helm
+            - curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+            - chmod +x get_helm.sh
+            - ./get_helm.sh
+            - helm version          
+            - > 
+              helm upgrade --install -n $namespace $app_name-fe-$env 
+              --set fe_image=$image,app_name=$app_name
+              -f ./build-scripts/manifests/values/$environment-$env.yml 
+              -f ./build-scripts/manifests/secrets/prod-$env.yml ./build-scripts/manifests
